@@ -1,61 +1,33 @@
 """
-Pydantic models for the Support Ticket Environment.
+Pydantic models for the AI Support Ticket Environment.
 """
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
-from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
-class TicketPriority(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
-    critical = "critical"
-
-
-class TicketStatus(str, Enum):
-    open = "open"
-    in_progress = "in_progress"
-    resolved = "resolved"
-    closed = "closed"
-
-
-class Ticket(BaseModel):
-    id: str = Field(..., description="Unique ticket identifier")
-    title: str = Field(..., description="Short summary of the issue")
-    description: str = Field(..., description="Full description of the issue")
-    priority: TicketPriority = Field(default=TicketPriority.medium)
-    status: TicketStatus = Field(default=TicketStatus.open)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-    assigned_to: Optional[str] = None
-    tags: list[str] = Field(default_factory=list)
-
-
-class Message(BaseModel):
-    role: str = Field(..., description="'user' or 'assistant'")
-    content: str = Field(..., description="Message text")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
 class Observation(BaseModel):
-    ticket: Ticket
-    conversation: list[Message] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict)
+    ticket_id: str = Field(..., description="Unique identifier for the support ticket")
+    user_query: str = Field(..., description="The user's message or question")
+    category: Optional[str] = Field(default=None, description="Ticket category (e.g. billing, technical)")
+    priority: Optional[str] = Field(default=None, description="Ticket priority (e.g. low, medium, high)")
+    conversation_history: list[str] = Field(
+        default_factory=list,
+        description="Ordered list of previous messages in the conversation",
+    )
 
 
 class Action(BaseModel):
-    action_type: str = Field(..., description="Type of action to take")
-    parameters: dict = Field(default_factory=dict, description="Action parameters")
+    category: str = Field(..., description="Category assigned to the ticket")
+    priority: str = Field(..., description="Priority assigned to the ticket")
+    action: str = Field(..., description="Action to take: 'refund', 'escalate', or 'guide'")
+    response: str = Field(..., description="The agent's response to the user")
+    resolve: bool = Field(..., description="Whether this action resolves the ticket")
 
 
-class StepResult(BaseModel):
-    observation: Observation
-    reward: float = Field(default=0.0)
-    done: bool = Field(default=False)
-    info: dict = Field(default_factory=dict)
+class Reward(BaseModel):
+    score: float = Field(..., description="Numeric reward signal for the agent's action")
+    reason: Optional[str] = Field(default=None, description="Human-readable explanation of the reward")
