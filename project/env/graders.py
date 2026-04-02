@@ -1,85 +1,159 @@
 """
-Graders for evaluating agent performance on support ticket tasks.
+Grading functions for the Support Ticket Environment.
 
-Each grader takes a completed episode and returns a score between 0 and 1.
+Each grader takes a predicted Action and an expected dict (one row from
+TICKETS) and returns a float score in [0.0, 1.0].
+
+Difficulty    Scored fields                        Weights
+-----------   -----------------------------------  ---------------------------
+easy          category                             1.0
+medium        category, priority                   0.6 + 0.4
+hard          category, priority, action, response 0.3 + 0.2 + 0.3 + 0.2
+              penalty if all three main fields wrong: -0.2, clamped to 0.0
 """
 
 from __future__ import annotations
 
-from typing import Callable
-
-from .models import Observation, StepResult, TicketStatus
-
-
-GraderFn = Callable[[list[StepResult]], float]
+from .models import Action
 
 
 # ---------------------------------------------------------------------------
-# Individual grader functions
+# Shared constants — imported by env.py to keep scoring in sync
 # ---------------------------------------------------------------------------
 
-def resolution_grader(results: list[StepResult]) -> float:
-    """
-    Returns 1.0 if the ticket was resolved/closed by end of episode, else 0.0.
-    """
-    if not results:
-        return 0.0
-    final = results[-1]
-    terminal = {TicketStatus.resolved, TicketStatus.closed}
-    return 1.0 if final.observation.ticket.status in terminal else 0.0
-
-
-def efficiency_grader(results: list[StepResult], max_steps: int = 20) -> float:
-    """
-    Returns a score based on how quickly the ticket was resolved.
-    Fewer steps → higher score. Returns 0 if not resolved.
-    """
-    if not results:
-        return 0.0
-    if resolution_grader(results) == 0.0:
-        return 0.0
-    steps_taken = len(results)
-    return max(0.0, 1.0 - (steps_taken - 1) / max(max_steps - 1, 1))
-
-
-def customer_satisfaction_grader(results: list[StepResult]) -> float:
-    """
-    Placeholder: evaluate whether the agent's messages were polite and helpful.
-    Returns a score in [0, 1]. Override with a model-based grader as needed.
-    """
-    # TODO: implement grading logic (e.g. via an LLM judge or rule-based check)
-    return 0.0
+ACTION_KEYWORDS: dict[str, list[str]] = {
+    "refund": [
+        "refund", "reimburs", "charg", "payment", "credit", "return",
+        "amount", "transaction",
+    ],
+    "escalate": [
+        "escalat", "team", "specialist", "engineer", "investigat",
+        "urgent", "priorit", "senior", "handl",
+    ],
+    "guide": [
+        "step", "follow", "guid", "instruction", "how", "navig",
+        "click", "setting", "menu", "select",
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
-# Composite grader
+# Internal helpers
 # ---------------------------------------------------------------------------
 
-def composite_grader(
-    results: list[StepResult],
-    max_steps: int = 20,
-    weights: dict[str, float] | None = None,
-) -> float:
-    """
-    Weighted combination of individual graders.
+def _keyword_hit(response: str, expected_action: str) -> bool:
+    """Return True if the response contains at least one keyword for the action."""
+    keywords = ACTION_KEYWORDS.get(expected_action, [])
+    lower = response.lower()
+    return any(kw in lower for kw in keywords)
 
-    Default weights:
-        resolution: 0.5
-        efficiency: 0.3
-        customer_satisfaction: 0.2
+
+# ---------------------------------------------------------------------------
+# Graders
+# ---------------------------------------------------------------------------
+
+def grade_easy(action: Action, expected: dict) -> float:
     """
-    default_weights: dict[str, float] = {
-        "resolution": 0.5,
-        "efficiency": 0.3,
-        "customer_satisfaction": 0.2,
+    Easy task — classify category only.
+
+    Scoring
+    -------
+    +1.0  category correct
+     0.0  category wrong
+
+    Returns a score in {0.0, 1.0}.
+    """
+    return 1.0 if action.category.lower() == expected["category"] else 0.0
+
+
+def grade_medium(action: Action, expected: dict) -> float:
+    """
+    Medium task — classify category and assign priority.
+
+    Scoring
+    -------
+    +0.6  category correct
+    +0.4  priority correct
+
+    Returns a score in [0.0, 1.0].
+    """
+    score = 0.0
+
+    if action.category.lower() == expected["category"]:
+        score += 0.6
+
+    if action.priority.lower() == expected["priority"]:
+        score += 0.4
+
+    return round(score, 4)
+
+
+def grade_hard(action: Action, expected: dict) -> float:
+    """
+    Hard task — full resolution (category, priority, action, response).
+
+    Scoring
+    -------
+    +0.3  category correct
+    +0.2  priority correct
+    +0.3  action correct
+    +0.2  response contains at least one keyword for the expected action
+    -0.2  penalty if category, priority, AND action are all wrong
+
+    Final score is clamped to [0.0, 1.0].
+    """
+    category_correct = action.category.lower() == expected["category"]
+    priority_correct = action.priority.lower() == expected["priority"]
+    action_correct   = action.action.lower()   == expected["action"]
+    keywords_hit     = _keyword_hit(action.response, expected["action"])
+
+    score = 0.0
+
+    if category_correct:
+        score += 0.3
+    if priority_correct:
+        score += 0.2
+    if action_correct:
+        score += 0.3
+    if keywords_hit:
+        score += 0.2
+
+    # Penalty when all three primary fields are wrong
+    if not category_correct and not priority_correct and not action_correct:
+        score -= 0.2
+
+    return round(max(0.0, min(1.0, score)), 4)
+
+
+# ---------------------------------------------------------------------------
+# Dispatch helper
+# ---------------------------------------------------------------------------
+
+def grade(difficulty: str, action: Action, expected: dict) -> float:
+    """
+    Route to the correct grader by difficulty string.
+
+    Parameters
+    ----------
+    difficulty : str
+        One of "easy", "medium", "hard".
+    action : Action
+        The agent's predicted action.
+    expected : dict
+        One row from TICKETS with keys: id, query, category, priority, action.
+
+    Returns
+    -------
+    float
+        Score in [0.0, 1.0].
+    """
+    graders = {
+        "easy":   grade_easy,
+        "medium": grade_medium,
+        "hard":   grade_hard,
     }
-    w = {**default_weights, **(weights or {})}
-
-    scores = {
-        "resolution": resolution_grader(results),
-        "efficiency": efficiency_grader(results, max_steps=max_steps),
-        "customer_satisfaction": customer_satisfaction_grader(results),
-    }
-
-    total_weight = sum(w[k] for k in scores)
-    return sum(w[k] * v for k, v in scores.items()) / total_weight if total_weight else 0.0
+    if difficulty not in graders:
+        raise ValueError(
+            f"Unknown difficulty '{difficulty}'. Choose from: {list(graders)}"
+        )
+    return graders[difficulty](action, expected)

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .dataset import TICKETS
+from .graders import ACTION_KEYWORDS
 from .models import Action, Observation, Reward
 
 
@@ -48,22 +49,8 @@ _W_KEYWORDS  = 0.2   # response contains useful keywords
 
 _PENALTY_ALL_WRONG = 0.2  # deducted when category, priority, AND action are all wrong
 
-# Keywords that signal a useful response for each action type.
-# Scoring: at least 1 keyword present → full keyword credit.
-_ACTION_KEYWORDS: dict[str, list[str]] = {
-    "refund": [
-        "refund", "reimburs", "charg", "payment", "credit", "return",
-        "amount", "transaction",
-    ],
-    "escalate": [
-        "escalat", "team", "specialist", "engineer", "investigat",
-        "urgent", "priorit", "senior", "handl",
-    ],
-    "guide": [
-        "step", "follow", "guid", "instruction", "how", "navig",
-        "click", "setting", "menu", "select",
-    ],
-}
+# Imported from graders.py — single source of truth for keyword scoring.
+_ACTION_KEYWORDS = ACTION_KEYWORDS
 
 
 # ---------------------------------------------------------------------------
