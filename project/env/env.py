@@ -7,11 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .dataset import TICKETS
 from .models import Action, Observation, Reward
 
 
 # ---------------------------------------------------------------------------
-# Internal ticket schema (hardcoded dataset)
+# Internal ticket schema — built from dataset.py
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -25,40 +26,13 @@ class _Ticket:
 
 _DATASET: list[_Ticket] = [
     _Ticket(
-        ticket_id="T001",
-        user_query="I was charged twice for my subscription last month. Please fix this.",
-        expected_category="billing",
-        expected_priority="high",
-        expected_action="refund",
-    ),
-    _Ticket(
-        ticket_id="T002",
-        user_query="My account has been locked and I cannot reset my password.",
-        expected_category="account",
-        expected_priority="high",
-        expected_action="escalate",
-    ),
-    _Ticket(
-        ticket_id="T003",
-        user_query="How do I export my data to a CSV file?",
-        expected_category="technical",
-        expected_priority="low",
-        expected_action="guide",
-    ),
-    _Ticket(
-        ticket_id="T004",
-        user_query="I want to cancel my plan and get a prorated refund.",
-        expected_category="billing",
-        expected_priority="medium",
-        expected_action="refund",
-    ),
-    _Ticket(
-        ticket_id="T005",
-        user_query="The API is returning 500 errors in production for all our requests.",
-        expected_category="technical",
-        expected_priority="high",
-        expected_action="escalate",
-    ),
+        ticket_id=t["id"],
+        user_query=t["query"],
+        expected_category=t["category"],
+        expected_priority=t["priority"],
+        expected_action=t["action"],
+    )
+    for t in TICKETS
 ]
 
 MAX_STEPS: int = 5
