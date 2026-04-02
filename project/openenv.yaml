@@ -1,0 +1,21 @@
+name: support-ticket-environment
+version: "0.1.0"
+description: >
+  An OpenEnv-compatible environment for training and evaluating agents
+  on customer support ticket resolution tasks.
+
+python_version: "3.10"
+
+entry_point:
+  module: env
+  class: SupportTicketEnv
+
+tasks_module: env.tasks
+graders_module: env.graders
+
+default_max_steps: 20
+
+metadata:
+  domain: customer-support
+  action_space: discrete
+  observation_type: structured
