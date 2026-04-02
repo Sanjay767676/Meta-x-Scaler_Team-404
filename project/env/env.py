@@ -38,13 +38,32 @@ _DATASET: list[_Ticket] = [
 MAX_STEPS: int = 5
 
 # ---------------------------------------------------------------------------
-# Reward weights (must sum to 1.0)
+# Reward weights
 # ---------------------------------------------------------------------------
 
-_W_CATEGORY = 0.25
-_W_PRIORITY  = 0.25
-_W_ACTION    = 0.35
-_W_RESOLVE   = 0.15
+_W_CATEGORY = 0.3   # correct category
+_W_PRIORITY  = 0.2   # correct priority
+_W_ACTION    = 0.3   # correct action type
+_W_KEYWORDS  = 0.2   # response contains useful keywords
+
+_PENALTY_ALL_WRONG = 0.2  # deducted when category, priority, AND action are all wrong
+
+# Keywords that signal a useful response for each action type.
+# Scoring: at least 1 keyword present → full keyword credit.
+_ACTION_KEYWORDS: dict[str, list[str]] = {
+    "refund": [
+        "refund", "reimburs", "charg", "payment", "credit", "return",
+        "amount", "transaction",
+    ],
+    "escalate": [
+        "escalat", "team", "specialist", "engineer", "investigat",
+        "urgent", "priorit", "senior", "handl",
+    ],
+    "guide": [
+        "step", "follow", "guid", "instruction", "how", "navig",
+        "click", "setting", "menu", "select",
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -159,66 +178,77 @@ class SupportEnv:
 
     def _score_action(self, action: Action) -> Reward:
         """
-        Deterministic partial scoring. Each dimension is worth a fixed weight.
+        Deterministic partial scoring.
 
-        Scoring breakdown
-        -----------------
-        category correct  →  0.25
-        priority correct  →  0.25
-        action correct    →  0.35
-        resolve correct   →  0.15  (should_resolve == action.resolve)
+        Breakdown
+        ---------
+        +0.3  category correct
+        +0.2  priority correct
+        +0.3  action type correct
+        +0.2  response contains at least one useful keyword
+        -0.2  penalty if ALL THREE of category, priority, and action are wrong
 
-        Total max = 1.0
+        Final score is clamped to [0.0, 1.0].
         """
         assert self._ticket is not None
         t = self._ticket
 
-        # Determine whether resolving right now is the ideal move:
-        # ideal to resolve only when the action itself is correct AND
-        # this is either the final step or the action is genuinely sufficient.
-        correct_action = action.action.lower() == t.expected_action
-        should_resolve = correct_action and (
-            self._step_count >= MAX_STEPS or action.resolve
-        )
-
         score = 0.0
         reasons: list[str] = []
 
-        # Category
-        if action.category.lower() == t.expected_category:
+        # --- Category (+0.3) ---
+        category_correct = action.category.lower() == t.expected_category
+        if category_correct:
             score += _W_CATEGORY
-            reasons.append("category correct (+0.25)")
+            reasons.append(f"category correct (+{_W_CATEGORY})")
         else:
             reasons.append(
                 f"category wrong: got '{action.category}', "
-                f"expected '{t.expected_category}' (+0.00)"
+                f"expected '{t.expected_category}' (+0.0)"
             )
 
-        # Priority
-        if action.priority.lower() == t.expected_priority:
+        # --- Priority (+0.2) ---
+        priority_correct = action.priority.lower() == t.expected_priority
+        if priority_correct:
             score += _W_PRIORITY
-            reasons.append("priority correct (+0.25)")
+            reasons.append(f"priority correct (+{_W_PRIORITY})")
         else:
             reasons.append(
                 f"priority wrong: got '{action.priority}', "
-                f"expected '{t.expected_priority}' (+0.00)"
+                f"expected '{t.expected_priority}' (+0.0)"
             )
 
-        # Action type
-        if correct_action:
+        # --- Action type (+0.3) ---
+        action_correct = action.action.lower() == t.expected_action
+        if action_correct:
             score += _W_ACTION
-            reasons.append(f"action correct: '{action.action}' (+0.35)")
+            reasons.append(f"action correct: '{action.action}' (+{_W_ACTION})")
         else:
             reasons.append(
                 f"action wrong: got '{action.action}', "
-                f"expected '{t.expected_action}' (+0.00)"
+                f"expected '{t.expected_action}' (+0.0)"
             )
 
-        # Resolve flag
-        if action.resolve == should_resolve:
-            score += _W_RESOLVE
-            reasons.append("resolve flag correct (+0.15)")
+        # --- Keyword check (+0.2) ---
+        # Use the expected action's keyword list so scoring is deterministic
+        # regardless of what action the agent chose.
+        keywords = _ACTION_KEYWORDS.get(t.expected_action, [])
+        response_lower = action.response.lower()
+        matched = [kw for kw in keywords if kw in response_lower]
+        if matched:
+            score += _W_KEYWORDS
+            reasons.append(
+                f"response keywords matched {matched} (+{_W_KEYWORDS})"
+            )
         else:
-            reasons.append("resolve flag incorrect (+0.00)")
+            reasons.append(f"no useful keywords found in response (+0.0)")
+
+        # --- Penalty: all three main dimensions wrong (-0.2) ---
+        if not category_correct and not priority_correct and not action_correct:
+            score -= _PENALTY_ALL_WRONG
+            reasons.append(f"completely wrong: penalty (-{_PENALTY_ALL_WRONG})")
+
+        # Clamp to [0.0, 1.0]
+        score = max(0.0, min(1.0, score))
 
         return Reward(score=round(score, 4), reason="; ".join(reasons))
