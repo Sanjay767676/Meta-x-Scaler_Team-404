@@ -1,5 +1,5 @@
 """
-inference.py — Example script for running an agent against the Support Ticket Environment.
+inference.py — Example script for running an agent against SupportEnv.
 
 Usage:
     python inference.py
@@ -7,41 +7,45 @@ Usage:
 
 from __future__ import annotations
 
-from env import SupportTicketEnv, Action, SAMPLE_TASKS
-from env.graders import composite_grader
+from env import SupportEnv, Action
 
 
-def run_episode(task_index: int = 0) -> None:
-    task = SAMPLE_TASKS[task_index]
-    env = SupportTicketEnv(max_steps=task.max_steps)
+def run_episode(ticket_index: int = 0) -> None:
+    env = SupportEnv()
+    obs = env.reset(ticket_index=ticket_index)
 
-    observation = env.reset(ticket=task.ticket)
-    print(f"[Episode start] Ticket: {observation.ticket.title}")
-    print(f"  Priority : {observation.ticket.priority}")
-    print(f"  Status   : {observation.ticket.status}")
+    print(f"[Episode start]")
+    print(f"  Ticket ID : {obs.ticket_id}")
+    print(f"  Query     : {obs.user_query}")
     print()
 
-    results = []
     done = False
+    total_reward = 0.0
 
     while not done:
         # TODO: replace with a real agent policy
-        action = Action(action_type="no_op")
-
-        result = env.step(action)
-        results.append(result)
-        done = result.done
-
-        print(
-            f"  Step {result.observation.metadata['step']:>3} | "
-            f"status={result.observation.ticket.status} | "
-            f"reward={result.reward:.3f} | done={result.done}"
+        action = Action(
+            category="billing",
+            priority="high",
+            action="refund",
+            response="We have identified the duplicate charge and will process a refund within 3-5 business days.",
+            resolve=True,
         )
 
-    score = composite_grader(results, max_steps=task.max_steps)
+        obs, reward, done = env.step(action)
+        total_reward += reward.score
+
+        state = env.state()
+        print(
+            f"  Step {state['step']:>2} | "
+            f"score={reward.score:.4f} | "
+            f"done={done}"
+        )
+        print(f"    {reward.reason}")
+
     print()
-    print(f"[Episode end] Composite score: {score:.4f}")
+    print(f"[Episode end] Total reward: {total_reward:.4f}")
 
 
 if __name__ == "__main__":
-    run_episode(task_index=0)
+    run_episode(ticket_index=0)
