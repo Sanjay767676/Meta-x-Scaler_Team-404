@@ -100,7 +100,7 @@ class SupportEnv:
         self._done = False
         return self._build_observation()
 
-    def step(self, action: Action) -> tuple[Observation, Reward, bool]:
+    def step(self, action: Action) -> tuple[Observation, Reward, bool, dict]:
         """
         Apply an action and advance the environment by one step.
 
@@ -117,9 +117,13 @@ class SupportEnv:
             Partial score in [0, 1] with an explanation.
         done : bool
             True when the episode is finished.
+        info : dict
+            Auxiliary diagnostic data (step count, ticket id, reason).
         """
-        if self._ticket is None or self._done:
-            raise RuntimeError("Call reset() before step(), or episode is already done.")
+        if self._ticket is None:
+            raise RuntimeError("Environment not initialised. Call reset() before step().")
+        if self._done:
+            raise RuntimeError("Episode is already done. Call reset() to start a new one.")
 
         self._step_count += 1
 
@@ -133,7 +137,15 @@ class SupportEnv:
             self._done = True
 
         observation = self._build_observation()
-        return observation, reward, self._done
+
+        info: dict = {
+            "step": self._step_count,
+            "max_steps": MAX_STEPS,
+            "ticket_id": self._ticket.ticket_id,
+            "reward_reason": reward.reason,
+        }
+
+        return observation, reward, self._done, info
 
     def state(self) -> dict:
         """
@@ -154,7 +166,8 @@ class SupportEnv:
     # ------------------------------------------------------------------
 
     def _build_observation(self) -> Observation:
-        assert self._ticket is not None
+        if self._ticket is None:
+            raise RuntimeError("No active ticket. Call reset() first.")
         return Observation(
             ticket_id=self._ticket.ticket_id,
             user_query=self._ticket.user_query,
@@ -177,7 +190,8 @@ class SupportEnv:
 
         Final score is clamped to [0.0, 1.0].
         """
-        assert self._ticket is not None
+        if self._ticket is None:
+            raise RuntimeError("No active ticket. Call reset() first.")
         t = self._ticket
 
         score = 0.0

@@ -88,12 +88,11 @@ def run_episode(ticket_index: int = 0) -> float:
         raw_output = call_model(obs_text)
         action = parse_model_output(raw_output)
 
-        obs, reward, done = env.step(action)
+        obs, reward, done, info = env.step(action)
         total_reward += reward.score
-        state = env.state()
 
         print(
-            f"[STEP {state['step']}] "
+            f"[STEP {info['step']}] "
             f"category={action.category} | "
             f"priority={action.priority} | "
             f"action={action.action} | "
@@ -102,7 +101,7 @@ def run_episode(ticket_index: int = 0) -> float:
         )
         print(f"         reason: {reward.reason}")
 
-    print(f"[END] total_reward={total_reward:.4f} | steps={state['step']}")
+    print(f"[END] total_reward={total_reward:.4f} | steps={info['step']}")
     return total_reward
 
 
