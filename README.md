@@ -103,8 +103,9 @@ per-task scores plus average score.
 Set environment variables:
 
 ```bash
+set API_BASE_URL=https://api.openai.com/v1
+set MODEL_NAME=gpt-4o-mini
 set OPENAI_API_KEY=your_key_here
-set OPENAI_MODEL=gpt-4o-mini
 ```
 
 Run baseline:

@@ -103,7 +103,7 @@ def check_inference_mock() -> None:
     env["BASELINE_MODE"] = "mock"
     env["API_BASE_URL"] = env.get("API_BASE_URL", "mock://local")
     env["MODEL_NAME"] = env.get("MODEL_NAME", "gpt-4o-mini")
-    env["HF_TOKEN"] = env.get("HF_TOKEN", "mock-token")
+    env["OPENAI_API_KEY"] = env.get("OPENAI_API_KEY", "mock-token")
     env["MAX_RUNTIME_SECONDS"] = env.get("MAX_RUNTIME_SECONDS", "1100")
     result = subprocess.run([sys.executable, "inference.py"], env=env, capture_output=True, text=True)
     if result.returncode != 0:

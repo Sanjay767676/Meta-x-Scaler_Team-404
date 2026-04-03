@@ -1,6 +1,6 @@
 """OpenAI baseline runner with structured submission logs.
 
-Required env vars (api mode): API_BASE_URL, MODEL_NAME, HF_TOKEN
+Required env vars (api mode): API_BASE_URL, MODEL_NAME, OPENAI_API_KEY
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def run_baseline() -> None:
     mode = os.getenv("BASELINE_MODE", "api").lower().strip()
     api_base_url = os.getenv("API_BASE_URL", "").strip()
     model = os.getenv("MODEL_NAME", "").strip()
-    api_key = os.getenv("HF_TOKEN", "").strip()
+    api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("HF_TOKEN", "").strip()
 
     if mode != "mock":
         missing = [
@@ -157,7 +157,7 @@ def run_baseline() -> None:
             for name, value in (
                 ("API_BASE_URL", api_base_url),
                 ("MODEL_NAME", model),
-                ("HF_TOKEN", api_key),
+                ("OPENAI_API_KEY", api_key),
             )
             if not value
         ]
