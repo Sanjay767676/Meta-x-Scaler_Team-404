@@ -1,0 +1,28 @@
+name: support-ticket-env
+description: AI environment for handling customer support tickets
+
+version: "0.1.0"
+python_version: "3.10"
+
+entry_point:
+  module: env
+  class: SupportEnv
+
+tasks:
+  - easy
+  - medium
+  - hard
+
+tasks_module: env.tasks
+graders_module: env.graders
+
+default_max_steps: 5
+
+metadata:
+  domain: customer-support
+  action_space: discrete
+  observation_type: structured
+  tags:
+    - openenv
+    - huggingface-space
+    - customer-support

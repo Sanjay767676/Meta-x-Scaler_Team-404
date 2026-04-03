@@ -1,0 +1,28 @@
+{
+  "model": "gpt-4o-mini",
+  "seed": 7,
+  "scores": [
+    {
+      "task": "easy",
+      "ticket_id": "3",
+      "grader_score": 1.0,
+      "episode_return": 1.9,
+      "steps": 2
+    },
+    {
+      "task": "medium",
+      "ticket_id": "2",
+      "grader_score": 1.0,
+      "episode_return": 1.9,
+      "steps": 2
+    },
+    {
+      "task": "hard",
+      "ticket_id": "13",
+      "grader_score": 1.0,
+      "episode_return": 1.9,
+      "steps": 2
+    }
+  ],
+  "average_grader_score": 1.0
+}
