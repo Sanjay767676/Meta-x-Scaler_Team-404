@@ -1,5 +1,5 @@
 """
-inference.py — Run an agent episode against SupportEnv.
+inference.py - OpenAI baseline runner for all hackathon tasks.
 
 Usage:
     python inference.py
@@ -7,27 +7,17 @@ Usage:
 
 from __future__ import annotations
 
-from env import SupportEnv, Action
+import os
+import json
+from typing import Any, Optional
 
+from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Model output parser
-# ---------------------------------------------------------------------------
+from env import Action, SupportEnv, TASKS, TICKETS, grade
+
 
 def parse_model_output(raw: str) -> Action:
-    """
-    Convert a model's raw string output into a typed Action object.
-
-    Expected format (one key: value pair per line):
-        category: billing
-        priority: high
-        action: refund
-        response: We will process a full refund within 3-5 business days.
-        resolve: true
-
-    Lines that cannot be parsed are silently skipped.
-    Missing required fields fall back to safe defaults.
-    """
+    """Parse model text output into a typed Action with safe defaults."""
     fields: dict[str, str] = {}
     for line in raw.strip().splitlines():
         if ":" not in line:
@@ -44,66 +34,154 @@ def parse_model_output(raw: str) -> Action:
     )
 
 
-# ---------------------------------------------------------------------------
-# Placeholder model — replace with a real LLM call
-# ---------------------------------------------------------------------------
-
-def call_model(obs_text: str) -> str:
-    """
-    Simulate a model call. Returns a raw string in the expected key: value format.
-    Replace this function body with a real LLM API call.
-    """
+def build_prompt(task_id: str, user_query: str, history: list[str]) -> str:
+    """Build a deterministic task-specific prompt for the model."""
+    task = TASKS[task_id]
     return (
-        "category: billing\n"
-        "priority: high\n"
-        "action: refund\n"
-        "response: We have identified the duplicate charge and will process "
-        "a full refund to your original payment method within 3-5 business days.\n"
-        "resolve: true"
+        "You are a customer support triage agent.\n"
+        f"Task difficulty: {task.difficulty}\n"
+        f"Task objective: {task.objective}\n"
+        "Return ONLY the following keys, one per line:\n"
+        "category: <billing|account|technical>\n"
+        "priority: <low|medium|high>\n"
+        "action: <refund|escalate|guide>\n"
+        "response: <short customer-facing response>\n"
+        "resolve: <true|false>\n\n"
+        f"User query: {user_query}\n"
+        f"Conversation history: {history}\n"
     )
 
 
-# ---------------------------------------------------------------------------
-# Episode runner
-# ---------------------------------------------------------------------------
+def call_model(client: OpenAI, prompt: str, model: str) -> str:
+    """Call OpenAI Chat Completions with deterministic settings."""
+    seed_raw = os.getenv("OPENAI_SEED", "7")
+    seed = int(seed_raw)
+    completion = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        top_p=1,
+        seed=seed,
+        messages=[
+            {"role": "system", "content": "Follow the requested output format exactly."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return completion.choices[0].message.content or ""
 
-def run_episode(ticket_index: int = 0) -> float:
+
+def mock_model_output(expected: dict, step: int) -> str:
+    """Deterministic fallback output for local testing without API access."""
+    resolve_value = "true" if step >= 2 else "false"
+    if expected["action"] == "refund":
+        response = "We identified the duplicate charge and will process a refund to your original payment method."
+    elif expected["action"] == "escalate":
+        response = "We escalated this to a specialist team for urgent investigation and updates."
+    else:
+        response = "Please follow these steps in settings to complete the requested change."
+
+    return (
+        f"category: {expected['category']}\n"
+        f"priority: {expected['priority']}\n"
+        f"action: {expected['action']}\n"
+        f"response: {response}\n"
+        f"resolve: {resolve_value}"
+    )
+
+
+def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> dict[str, Any]:
+    """Run one task and return reproducible grader and environment scores."""
+    task = TASKS[task_id]
+    expected = TICKETS[task.ticket_index]
+
     env = SupportEnv()
-    obs = env.reset(ticket_index=ticket_index)
-
-    print(f"[START] ticket_id={obs.ticket_id} | query=\"{obs.user_query}\"")
-
-    total_reward = 0.0
+    obs = env.reset(task_id=task_id)
     done = False
+    episode_return = 0.0
+    info: dict[str, Any] = {"step": 0}
+    action = Action(
+        category="unknown",
+        priority="medium",
+        action="guide",
+        response="",
+        resolve=False,
+    )
 
     while not done:
-        # Build a text prompt from the current observation
-        obs_text = (
-            f"ticket_id: {obs.ticket_id}\n"
-            f"query: {obs.user_query}\n"
-            f"history: {obs.conversation_history}"
-        )
-
-        # Get raw model output and parse it into an Action
-        raw_output = call_model(obs_text)
+        prompt = build_prompt(task_id=task_id, user_query=obs.user_query, history=obs.conversation_history)
+        if mode == "mock":
+            raw_output = mock_model_output(expected=expected, step=info["step"] + 1)
+        else:
+            if client is None:
+                raise RuntimeError("OpenAI client is required in api mode.")
+            raw_output = call_model(client=client, prompt=prompt, model=model)
         action = parse_model_output(raw_output)
+        obs, env_reward, done, info = env.step(action)
+        episode_return += env_reward.score
 
-        obs, reward, done, info = env.step(action)
-        total_reward += reward.score
+    grader_score = grade(task_id, action, expected)
 
+    return {
+        "task": task_id,
+        "ticket_id": obs.ticket_id,
+        "done": done,
+        "step": info["step"],
+        "grader_score": grader_score,
+        "episode_return": round(episode_return, 4),
+        "action": action,
+    }
+
+
+def run_baseline() -> None:
+    """Run all tasks (easy, medium, hard) and print a baseline summary."""
+    mode = os.getenv("BASELINE_MODE", "api")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if mode != "mock" and not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required to run baseline inference.")
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    seed = int(os.getenv("OPENAI_SEED", "7"))
+    output_path = os.getenv("BASELINE_OUTPUT", "baseline_scores.json")
+    client = OpenAI(api_key=api_key) if mode != "mock" else None
+
+    task_order = ["easy", "medium", "hard"]
+    results = [run_task(task_id=t, client=client, model=model, mode=mode) for t in task_order]
+
+    print(f"[BASELINE] mode={mode} | model={model} | seed={seed}")
+    total = 0.0
+    for r in results:
+        total += r["grader_score"]
+        a = r["action"]
         print(
-            f"[STEP {info['step']}] "
-            f"category={action.category} | "
-            f"priority={action.priority} | "
-            f"action={action.action} | "
-            f"resolve={action.resolve} | "
-            f"score={reward.score:.4f}"
+            f"[TASK {r['task'].upper()}] ticket_id={r['ticket_id']} | "
+            f"grader_score={r['grader_score']:.4f} | episode_return={r['episode_return']:.4f} | steps={r['step']}"
         )
-        print(f"         reason: {reward.reason}")
+        print(
+            f"             category={a.category} | priority={a.priority} | "
+            f"action={a.action} | resolve={a.resolve}"
+        )
 
-    print(f"[END] total_reward={total_reward:.4f} | steps={info['step']}")
-    return total_reward
+    avg = total / len(results)
+    print(f"[SUMMARY] average_grader_score={avg:.4f}")
+
+    payload = {
+        "model": model,
+        "seed": seed,
+        "scores": [
+            {
+                "task": r["task"],
+                "ticket_id": r["ticket_id"],
+                "grader_score": r["grader_score"],
+                "episode_return": r["episode_return"],
+                "steps": r["step"],
+            }
+            for r in results
+        ],
+        "average_grader_score": round(avg, 4),
+    }
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"[ARTIFACT] wrote {output_path}")
 
 
 if __name__ == "__main__":
-    run_episode(ticket_index=0)
+    run_baseline()

@@ -4,37 +4,13 @@ SupportEnv — OpenEnv-style environment for AI support ticket resolution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
 from .dataset import TICKETS
-from .graders import ACTION_KEYWORDS
+from .graders import ACTION_KEYWORDS, grade
 from .models import Action, Observation, Reward
+from .tasks import TASKS
 
-
-# ---------------------------------------------------------------------------
-# Internal ticket schema — built from dataset.py
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class _Ticket:
-    ticket_id: str
-    user_query: str
-    expected_category: str
-    expected_priority: str
-    expected_action: str   # "refund" | "escalate" | "guide"
-
-
-_DATASET: list[_Ticket] = [
-    _Ticket(
-        ticket_id=t["id"],
-        user_query=t["query"],
-        expected_category=t["category"],
-        expected_priority=t["priority"],
-        expected_action=t["action"],
-    )
-    for t in TICKETS
-]
 
 MAX_STEPS: int = 5
 
@@ -48,6 +24,7 @@ _W_ACTION    = 0.3   # correct action type
 _W_KEYWORDS  = 0.2   # response contains useful keywords
 
 _PENALTY_ALL_WRONG = 0.2  # deducted when category, priority, AND action are all wrong
+_PENALTY_PREMATURE_RESOLVE = 0.25
 
 # Imported from graders.py — single source of truth for keyword scoring.
 _ACTION_KEYWORDS = ACTION_KEYWORDS
@@ -69,17 +46,19 @@ class SupportEnv:
     """
 
     def __init__(self) -> None:
-        self._ticket: Optional[_Ticket] = None
+        self._ticket: Optional[dict] = None
         self._step_count: int = 0
         self._conversation_history: list[str] = []
         self._done: bool = False
         self._ticket_index: int = 0
+        self._task_id: str = "hard"
+        self._hard_phase: str = "diagnose"
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
-    def reset(self, ticket_index: int = 0) -> Observation:
+    def reset(self, ticket_index: int = 0, task_id: Optional[str] = None) -> Observation:
         """
         Load a ticket from the hardcoded dataset and reset internal state.
 
@@ -87,17 +66,28 @@ class SupportEnv:
         ----------
         ticket_index : int
             Index into the dataset (0-based). Wraps around if out of range.
+        task_id : Optional[str]
+            Optional task difficulty selector: "easy", "medium", or "hard".
+            If provided, task metadata chooses the ticket.
 
         Returns
         -------
         Observation
             Initial observation for the loaded ticket.
         """
-        self._ticket_index = ticket_index % len(_DATASET)
-        self._ticket = _DATASET[self._ticket_index]
+        if task_id is not None:
+            if task_id not in TASKS:
+                raise ValueError(f"Unknown task_id '{task_id}'. Choose from: {list(TASKS)}")
+            self._task_id = task_id
+            self._ticket_index = TASKS[task_id].ticket_index % len(TICKETS)
+        else:
+            self._ticket_index = ticket_index % len(TICKETS)
+
+        self._ticket = TICKETS[self._ticket_index]
         self._step_count = 0
         self._conversation_history = []
         self._done = False
+        self._hard_phase = "diagnose"
         return self._build_observation()
 
     def step(self, action: Action) -> tuple[Observation, Reward, bool, dict]:
@@ -132,8 +122,28 @@ class SupportEnv:
 
         reward = self._score_action(action)
 
-        # Episode ends if agent resolves the ticket or the step limit is hit
-        if action.resolve or self._step_count >= MAX_STEPS:
+        # Hard mode requires at least one diagnosis turn before final resolution.
+        if self._task_id == "hard":
+            was_diagnose = self._hard_phase == "diagnose"
+            triage_ok = (
+                action.category.lower() == self._ticket["category"]
+                and action.priority.lower() == self._ticket["priority"]
+            )
+            if was_diagnose and triage_ok:
+                self._hard_phase = "resolve"
+
+            if action.resolve and was_diagnose:
+                adjusted = max(0.0, reward.score - _PENALTY_PREMATURE_RESOLVE)
+                reason = (reward.reason or "") + f"; premature resolve in hard mode (-{_PENALTY_PREMATURE_RESOLVE})"
+                reward = Reward(score=round(adjusted, 4), reason=reason.strip("; "))
+
+            if self._hard_phase == "resolve" and action.resolve and not was_diagnose:
+                self._done = True
+        else:
+            if action.resolve:
+                self._done = True
+
+        if self._step_count >= MAX_STEPS:
             self._done = True
 
         observation = self._build_observation()
@@ -141,7 +151,8 @@ class SupportEnv:
         info: dict = {
             "step": self._step_count,
             "max_steps": MAX_STEPS,
-            "ticket_id": self._ticket.ticket_id,
+            "ticket_id": self._ticket["id"],
+            "task_id": self._task_id,
             "reward_reason": reward.reason,
         }
 
@@ -154,10 +165,12 @@ class SupportEnv:
         if self._ticket is None:
             return {"status": "not_started"}
         return {
-            "ticket_id": self._ticket.ticket_id,
+            "ticket_id": self._ticket["id"],
             "step": self._step_count,
             "max_steps": MAX_STEPS,
             "done": self._done,
+            "task_id": self._task_id,
+            "hard_phase": self._hard_phase,
             "conversation_history": list(self._conversation_history),
         }
 
@@ -169,8 +182,8 @@ class SupportEnv:
         if self._ticket is None:
             raise RuntimeError("No active ticket. Call reset() first.")
         return Observation(
-            ticket_id=self._ticket.ticket_id,
-            user_query=self._ticket.user_query,
+            ticket_id=self._ticket["id"],
+            user_query=self._ticket["query"],
             category=None,          # agent must infer category
             priority=None,          # agent must infer priority
             conversation_history=list(self._conversation_history),
@@ -193,63 +206,46 @@ class SupportEnv:
         if self._ticket is None:
             raise RuntimeError("No active ticket. Call reset() first.")
         t = self._ticket
+        score = grade(self._task_id, action, t)
 
-        score = 0.0
         reasons: list[str] = []
+        category_correct = action.category.lower() == t["category"]
+        priority_correct = action.priority.lower() == t["priority"]
+        action_correct = action.action.lower() == t["action"]
 
-        # --- Category (+0.3) ---
-        category_correct = action.category.lower() == t.expected_category
         if category_correct:
-            score += _W_CATEGORY
             reasons.append(f"category correct (+{_W_CATEGORY})")
         else:
-            reasons.append(
-                f"category wrong: got '{action.category}', "
-                f"expected '{t.expected_category}' (+0.0)"
-            )
+            reasons.append(f"category wrong: got '{action.category}', expected '{t['category']}'")
 
-        # --- Priority (+0.2) ---
-        priority_correct = action.priority.lower() == t.expected_priority
-        if priority_correct:
-            score += _W_PRIORITY
-            reasons.append(f"priority correct (+{_W_PRIORITY})")
-        else:
-            reasons.append(
-                f"priority wrong: got '{action.priority}', "
-                f"expected '{t.expected_priority}' (+0.0)"
-            )
+        if self._task_id in ("medium", "hard"):
+            if priority_correct:
+                reasons.append(f"priority correct (+{_W_PRIORITY})")
+            else:
+                reasons.append(f"priority wrong: got '{action.priority}', expected '{t['priority']}'")
 
-        # --- Action type (+0.3) ---
-        action_correct = action.action.lower() == t.expected_action
-        if action_correct:
-            score += _W_ACTION
-            reasons.append(f"action correct: '{action.action}' (+{_W_ACTION})")
-        else:
-            reasons.append(
-                f"action wrong: got '{action.action}', "
-                f"expected '{t.expected_action}' (+0.0)"
-            )
+        if self._task_id == "hard":
+            if action_correct:
+                reasons.append(f"action correct: '{action.action}' (+{_W_ACTION})")
+            else:
+                reasons.append(f"action wrong: got '{action.action}', expected '{t['action']}'")
 
-        # --- Keyword check (+0.2) ---
-        # Use the expected action's keyword list so scoring is deterministic
-        # regardless of what action the agent chose.
-        keywords = _ACTION_KEYWORDS.get(t.expected_action, [])
+        keywords = _ACTION_KEYWORDS.get(t["action"], [])
         response_lower = action.response.lower()
         matched = [kw for kw in keywords if kw in response_lower]
-        if matched:
-            score += _W_KEYWORDS
-            reasons.append(
-                f"response keywords matched {matched} (+{_W_KEYWORDS})"
-            )
-        else:
-            reasons.append(f"no useful keywords found in response (+0.0)")
+        if self._task_id == "hard":
+            if matched:
+                reasons.append(f"response keywords matched {matched} (+{_W_KEYWORDS})")
+            else:
+                reasons.append("no useful keywords found in response")
 
-        # --- Penalty: all three main dimensions wrong (-0.2) ---
-        if not category_correct and not priority_correct and not action_correct:
-            score -= _PENALTY_ALL_WRONG
-            reasons.append(f"completely wrong: penalty (-{_PENALTY_ALL_WRONG})")
+            if not category_correct and not priority_correct and not action_correct:
+                reasons.append(f"completely wrong: penalty (-{_PENALTY_ALL_WRONG})")
 
-        # Clamp to [0.0, 1.0]
-        score = max(0.0, min(1.0, score))
+        # Penalize repeated identical responses to discourage looping behavior.
+        if len(self._conversation_history) >= 2:
+            if self._conversation_history[-1] == self._conversation_history[-2]:
+                score = max(0.0, score - 0.1)
+                reasons.append("looping response pattern: penalty (-0.1)")
 
         return Reward(score=round(score, 4), reason="; ".join(reasons))

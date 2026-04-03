@@ -22,3 +22,7 @@ metadata:
   domain: customer-support
   action_space: discrete
   observation_type: structured
+  tags:
+    - openenv
+    - huggingface-space
+    - customer-support

@@ -55,7 +55,7 @@ TASKS: dict[str, Task] = {
             "they will not affect your score."
         ),
         scored_fields=["category"],
-        ticket_index=0,
+        ticket_index=2,
     ),
 
     "medium": Task(
@@ -74,7 +74,7 @@ TASKS: dict[str, Task] = {
             "they will not affect your score."
         ),
         scored_fields=["category", "priority"],
-        ticket_index=0,
+        ticket_index=1,
     ),
 
     "hard": Task(
@@ -86,15 +86,19 @@ TASKS: dict[str, Task] = {
         ),
         description=(
             "You will be shown a customer support ticket. "
-            "Your goal is to produce a complete resolution.\n\n"
+            "Your goal is to produce a complete, multi-step resolution.\n\n"
             "Valid categories: billing, account, technical\n"
             "Valid priorities: low, medium, high\n"
             "Valid actions: refund, escalate, guide\n\n"
+            "Hard-mode flow:\n"
+            "  Step 1: diagnosis and triage (resolve should be false)\n"
+            "  Step 2+: final resolution after a solid diagnosis\n\n"
             "Scoring:\n"
             "  +0.3  category correct\n"
             "  +0.2  priority correct\n"
             "  +0.3  action correct\n"
             "  +0.2  response contains useful keywords for the action\n"
+            "  -0.25 penalty for resolving too early in hard mode\n"
             "  -0.2  penalty if category, priority, AND action are all wrong\n\n"
             "Set 'resolve' to True only when you are confident the issue is addressed. "
             "Write a clear, empathetic response that uses language appropriate to the "
@@ -102,6 +106,6 @@ TASKS: dict[str, Task] = {
             "guidance)."
         ),
         scored_fields=["category", "priority", "action", "response"],
-        ticket_index=0,
+        ticket_index=12,
     ),
 }
