@@ -2,9 +2,9 @@
 title: support-ticket-env
 sdk: docker
 tags:
-	- openenv
-	- reinforcement-learning
-	- customer-support
+  - openenv
+  - reinforcement-learning
+  - customer-support
 ---
 
 # Support Ticket OpenEnv Environment
