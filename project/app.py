@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from env import Action, SupportEnv, TASKS, TICKETS, grade
 
 app = FastAPI(title="support-ticket-env", version="0.1.0")
+RUNTIME_ENV = SupportEnv()
 
 
 class RunTaskRequest(BaseModel):
     task_id: str = Field(..., description="One of: easy, medium, hard")
+    action: Action
+
+
+class ResetRequest(BaseModel):
+    task_id: str | None = Field(default=None, description="Optional task id: easy, medium, hard")
+    ticket_index: int = Field(default=0, description="Fallback dataset index when task_id is omitted")
+
+
+class StepRequest(BaseModel):
     action: Action
 
 
@@ -27,6 +38,35 @@ def root() -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "healthy"}
+
+
+@app.post("/reset")
+def reset(req: ResetRequest) -> dict:
+    try:
+        obs = RUNTIME_ENV.reset(ticket_index=req.ticket_index, task_id=req.task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"observation": obs.model_dump(), "state": RUNTIME_ENV.state()}
+
+
+@app.post("/step")
+def step(req: StepRequest) -> dict:
+    try:
+        obs, reward, done, info = RUNTIME_ENV.step(req.action)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "observation": obs.model_dump(),
+        "reward": reward.model_dump(),
+        "done": done,
+        "info": info,
+        "state": RUNTIME_ENV.state(),
+    }
+
+
+@app.get("/state")
+def state() -> dict:
+    return RUNTIME_ENV.state()
 
 
 @app.post("/run-task")

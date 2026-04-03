@@ -1,19 +1,24 @@
-"""
-inference.py - OpenAI baseline runner for all hackathon tasks.
+"""OpenAI baseline runner with structured submission logs.
 
-Usage:
-    python inference.py
+Required env vars (api mode): API_BASE_URL, MODEL_NAME, HF_TOKEN
 """
 
 from __future__ import annotations
 
 import os
 import json
+import time
 from typing import Any, Optional
 
 from openai import OpenAI
 
 from env import Action, SupportEnv, TASKS, TICKETS, grade
+
+
+def _emit(tag: str, **fields: Any) -> None:
+    """Emit machine-parseable logs in required [TAG] format."""
+    payload = " ".join(f"{k}={json.dumps(v, ensure_ascii=True)}" for k, v in fields.items())
+    print(f"[{tag}] {payload}")
 
 
 def parse_model_output(raw: str) -> Action:
@@ -117,6 +122,14 @@ def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> d
         action = parse_model_output(raw_output)
         obs, env_reward, done, info = env.step(action)
         episode_return += env_reward.score
+        _emit(
+            "STEP",
+            task=task_id,
+            step=info["step"],
+            ticket_id=info["ticket_id"],
+            done=done,
+            env_reward=env_reward.score,
+        )
 
     grader_score = grade(task_id, action, expected)
 
@@ -132,18 +145,48 @@ def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> d
 
 
 def run_baseline() -> None:
-    """Run all tasks (easy, medium, hard) and print a baseline summary."""
-    mode = os.getenv("BASELINE_MODE", "api")
-    api_key = os.getenv("OPENAI_API_KEY")
-    if mode != "mock" and not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required to run baseline inference.")
+    """Run all tasks (easy, medium, hard) and print baseline summary."""
+    mode = os.getenv("BASELINE_MODE", "api").lower().strip()
+    api_base_url = os.getenv("API_BASE_URL", "").strip()
+    model = os.getenv("MODEL_NAME", "").strip()
+    api_key = os.getenv("HF_TOKEN", "").strip()
 
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    if mode != "mock":
+        missing = [
+            name
+            for name, value in (
+                ("API_BASE_URL", api_base_url),
+                ("MODEL_NAME", model),
+                ("HF_TOKEN", api_key),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(f"Missing required env vars in api mode: {', '.join(missing)}")
+    else:
+        if not api_base_url:
+            api_base_url = "mock://local"
+        if not model:
+            model = "gpt-4o-mini"
+
     seed = int(os.getenv("OPENAI_SEED", "7"))
     output_path = os.getenv("BASELINE_OUTPUT", "baseline_scores.json")
-    client = OpenAI(api_key=api_key) if mode != "mock" else None
+    max_runtime_seconds = int(os.getenv("MAX_RUNTIME_SECONDS", "1100"))
+    start = time.monotonic()
+
+    client = OpenAI(api_key=api_key, base_url=api_base_url) if mode != "mock" else None
 
     task_order = ["easy", "medium", "hard"]
+    _emit(
+        "START",
+        mode=mode,
+        model=model,
+        api_base_url=api_base_url,
+        max_runtime_seconds=max_runtime_seconds,
+        tasks=task_order,
+        seed=seed,
+    )
+
     results = [run_task(task_id=t, client=client, model=model, mode=mode) for t in task_order]
 
     print(f"[BASELINE] mode={mode} | model={model} | seed={seed}")
@@ -181,6 +224,19 @@ def run_baseline() -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"[ARTIFACT] wrote {output_path}")
+
+    elapsed = round(time.monotonic() - start, 3)
+    if elapsed > max_runtime_seconds:
+        raise TimeoutError(
+            f"Inference runtime exceeded MAX_RUNTIME_SECONDS ({elapsed}s > {max_runtime_seconds}s)."
+        )
+    _emit(
+        "END",
+        average_grader_score=round(avg, 4),
+        runtime_seconds=elapsed,
+        output_path=output_path,
+        tasks=len(results),
+    )
 
 
 if __name__ == "__main__":
