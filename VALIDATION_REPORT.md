@@ -1,6 +1,6 @@
 # Project Validation Report
 **Generated**: April 3, 2026
-**Location**: `C:\Users\user\Desktop\meta_x_scaler`
+**Location**: `C:\Users\user\Desktop\hf_space`
 
 ---
 
@@ -35,7 +35,7 @@ Output:
 | hard | 1.0000 | 1.9000 | 2 |
 | **Average** | **1.0000** | - | - |
 
-**Status**: Perfect performance across all task difficulties. Artifact generated at `project/baseline_scores.json`.
+**Status**: Perfect performance across all task difficulties. Artifact generated at `baseline_scores.json`.
 
 ---
 
@@ -93,7 +93,7 @@ Output:
 - **Status**: ✅ Generated successfully
 
 ### Project Files
-- **Directory**: `C:\Users\user\Desktop\meta_x_scaler\project\`
+- **Directory**: `C:\Users\user\Desktop\hf_space\`
 - **Key Files**:
   - `app.py` - FastAPI runtime ✅
   - `env/` - Core environment modules ✅

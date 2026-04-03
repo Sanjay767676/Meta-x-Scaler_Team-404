@@ -2,7 +2,7 @@
 
 ## Current Status ✅
 
-Your project at `C:\Users\user\Desktop\meta_x_scaler` has been **fully validated**:
+Your project at `C:\Users\user\Desktop\hf_space` has been **fully validated**:
 - ✅ OpenEnv validation: PASSED
 - ✅ Baseline scores generated: 1.0 average across all tasks
 - ✅ FastAPI app: Functional and ready
@@ -19,20 +19,20 @@ huggingface-cli login
 ```
 
 ### Step 2: Clone Your Space Repository
-Your Space URL: `https://huggingface.co/spaces/sanjay7676/meta_x_scaler`
+Your Space URL: `https://huggingface.co/spaces/<your-username>/<your-space-name>`
 
 ```powershell
-git clone https://huggingface.co/spaces/sanjay7676/meta_x_scaler
-cd meta_x_scaler
+git clone https://huggingface.co/spaces/<your-username>/<your-space-name>
+cd <your-space-name>
 ```
 
 ### Step 3: Copy Project Files
 ```powershell
 # Copy all project files from Desktop to Space directory
-Copy-Item -Path "C:\Users\user\Desktop\meta_x_scaler\project\*" -Destination "project\" -Recurse -Force
+Copy-Item -Path "C:\Users\user\Desktop\hf_space\project\*" -Destination "." -Recurse -Force
 
 # Copy the Dockerfile if needed
-Copy-Item -Path "C:\Users\user\Desktop\meta_x_scaler\project\Dockerfile" -Destination "." -Force
+Copy-Item -Path "C:\Users\user\Desktop\hf_space\project\Dockerfile" -Destination "." -Force
 ```
 
 ### Step 4: Add Required Space Files
@@ -50,13 +50,13 @@ git push
 ```
 
 ### Step 6: Monitor Build
-- Go to https://huggingface.co/spaces/sanjay7676/meta_x_scaler
+- Go to your Space page in the browser and monitor the build logs
 - Wait for build to complete (green status)
 - Click "App" tab to view live space
 
 ### Step 7: Verify Health Endpoint
 ```powershell
-Invoke-WebRequest -Uri "https://sanjay7676-meta-x-scaler.hf.space/health"
+Invoke-WebRequest -Uri "https://<your-username>-<your-space-name>.hf.space/health"
 # Expected: {"status": "healthy"}
 ```
 
@@ -77,7 +77,7 @@ $env:OPENAI_API_KEY = "sk-..."
 
 ### Step 3: Run Real Baseline
 ```powershell
-cd C:\Users\user\Desktop\meta_x_scaler\project
+cd C:\Users\user\Desktop\hf_space
 python inference.py
 ```
 
@@ -88,7 +88,7 @@ python inference.py
 
 ### Step 5: Push Updated Evidence
 ```powershell
-cd C:\Users\user\Desktop\meta_x_scaler
+cd C:\Users\user\Desktop\hf_space
 git add project/README.md project/baseline_scores.json
 git commit -m "docs: update with real OpenAI baseline scores"
 git push
@@ -104,7 +104,7 @@ If you want to test the Docker build locally:
 
 ### Step 2: Build Image
 ```powershell
-cd C:\Users\user\Desktop\meta_x_scaler\project
+cd C:\Users\user\Desktop\hf_space
 docker build -t support-ticket-env .
 ```
 
@@ -137,7 +137,7 @@ Before submitting, verify:
 
 ## 📚 Key Files Reference
 
-Located at `C:\Users\user\Desktop\meta_x_scaler\project\`:
+Located at `C:\Users\user\Desktop\hf_space\`:
 
 - **app.py** - FastAPI runtime (entrypoint for HF Spaces)
 - **inference.py** - Baseline runner (mock + OpenAI modes)
