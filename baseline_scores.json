@@ -6,21 +6,21 @@
       "task": "easy",
       "ticket_id": "3",
       "grader_score": 1.0,
-      "episode_return": 1.9,
+      "episode_return": 1.83,
       "steps": 2
     },
     {
       "task": "medium",
       "ticket_id": "2",
       "grader_score": 1.0,
-      "episode_return": 1.9,
+      "episode_return": 1.83,
       "steps": 2
     },
     {
       "task": "hard",
       "ticket_id": "13",
       "grader_score": 1.0,
-      "episode_return": 1.9,
+      "episode_return": 1.83,
       "steps": 2
     }
   ],
