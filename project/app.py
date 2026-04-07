@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
@@ -41,7 +41,7 @@ def health() -> dict:
 
 
 @app.post("/reset")
-def reset(req: ResetRequest) -> dict:
+def reset(req: ResetRequest = Body(default=ResetRequest())) -> dict:
     try:
         obs = RUNTIME_ENV.reset(ticket_index=req.ticket_index, task_id=req.task_id)
     except ValueError as exc:
@@ -50,7 +50,7 @@ def reset(req: ResetRequest) -> dict:
 
 
 @app.post("/step")
-def step(req: StepRequest) -> dict:
+def step(req: StepRequest = Body(...)) -> dict:
     try:
         obs, reward, done, info = RUNTIME_ENV.step(req.action)
     except RuntimeError as exc:

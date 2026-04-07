@@ -1,5 +1,7 @@
 {
   "model": "gpt-4o-mini",
+  "benchmark": "support-ticket-env",
+  "mode": "mock",
   "seed": 7,
   "scores": [
     {
@@ -7,21 +9,36 @@
       "ticket_id": "3",
       "grader_score": 1.0,
       "episode_return": 1.83,
-      "steps": 2
+      "steps": 2,
+      "rewards": [
+        1.0,
+        0.83
+      ],
+      "error": null
     },
     {
       "task": "medium",
       "ticket_id": "2",
       "grader_score": 1.0,
       "episode_return": 1.83,
-      "steps": 2
+      "steps": 2,
+      "rewards": [
+        1.0,
+        0.83
+      ],
+      "error": null
     },
     {
       "task": "hard",
       "ticket_id": "13",
       "grader_score": 1.0,
       "episode_return": 1.83,
-      "steps": 2
+      "steps": 2,
+      "rewards": [
+        1.0,
+        0.83
+      ],
+      "error": null
     }
   ],
   "average_grader_score": 1.0
