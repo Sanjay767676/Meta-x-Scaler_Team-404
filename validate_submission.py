@@ -93,9 +93,11 @@ def check_tasks_and_graders() -> None:
         )
         for label, action in (("best", best_action), ("low", low_action)):
             score = grade(task_id, action, expected)
-            if not (0.0 <= score <= 1.0):
-                _fail(f"Task {task_id} grader out of range for {label} action: {score}")
-    _ok("Tasks >= 3 and grader outputs are bounded to [0.0, 1.0]")
+            if not (0.0 < score < 1.0):
+                _fail(
+                    f"Task {task_id} grader must be strictly in (0, 1) for {label} action: {score}"
+                )
+    _ok("Tasks >= 3 and grader outputs are strictly bounded to (0.0, 1.0)")
 
 
 def check_determinism_and_signal() -> None:

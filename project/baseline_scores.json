@@ -1,28 +1,45 @@
 {
   "model": "gpt-4o-mini",
+  "benchmark": "support-ticket-env",
+  "mode": "mock",
   "seed": 7,
   "scores": [
     {
       "task": "easy",
       "ticket_id": "3",
-      "grader_score": 1.0,
-      "episode_return": 1.9,
-      "steps": 2
+      "grader_score": 0.99,
+      "episode_return": 1.88,
+      "steps": 2,
+      "rewards": [
+        0.99,
+        0.89
+      ],
+      "error": null
     },
     {
       "task": "medium",
       "ticket_id": "2",
-      "grader_score": 1.0,
-      "episode_return": 1.9,
-      "steps": 2
+      "grader_score": 0.99,
+      "episode_return": 1.88,
+      "steps": 2,
+      "rewards": [
+        0.99,
+        0.89
+      ],
+      "error": null
     },
     {
       "task": "hard",
       "ticket_id": "13",
-      "grader_score": 1.0,
-      "episode_return": 1.9,
-      "steps": 2
+      "grader_score": 0.99,
+      "episode_return": 1.88,
+      "steps": 2,
+      "rewards": [
+        0.99,
+        0.89
+      ],
+      "error": null
     }
   ],
-  "average_grader_score": 1.0
+  "average_grader_score": 0.99
 }

@@ -7,39 +7,39 @@
     {
       "task": "easy",
       "ticket_id": "3",
-      "grader_score": 1.0,
-      "episode_return": 1.83,
+      "grader_score": 0.99,
+      "episode_return": 1.82,
       "steps": 2,
       "rewards": [
         1.0,
-        0.83
+        0.82
       ],
       "error": null
     },
     {
       "task": "medium",
       "ticket_id": "2",
-      "grader_score": 1.0,
-      "episode_return": 1.83,
+      "grader_score": 0.99,
+      "episode_return": 1.82,
       "steps": 2,
       "rewards": [
         1.0,
-        0.83
+        0.82
       ],
       "error": null
     },
     {
       "task": "hard",
       "ticket_id": "13",
-      "grader_score": 1.0,
-      "episode_return": 1.83,
+      "grader_score": 0.99,
+      "episode_return": 1.82,
       "steps": 2,
       "rewards": [
         1.0,
-        0.83
+        0.82
       ],
       "error": null
     }
   ],
-  "average_grader_score": 1.0
+  "average_grader_score": 0.99
 }
