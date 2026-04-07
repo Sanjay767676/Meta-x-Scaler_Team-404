@@ -16,6 +16,12 @@ from env import Action, SupportEnv, TASKS, TICKETS, grade
 
 BENCHMARK = os.getenv("BENCHMARK", "support-ticket-env")
 
+# Required by submission checklist.
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1").strip()
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "").strip()
+
 
 def _emit_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}")
@@ -175,9 +181,9 @@ def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> d
 def run_baseline() -> None:
     """Run all tasks and write baseline artifact without extra stdout lines."""
     mode = os.getenv("BASELINE_MODE", "api").lower().strip()
-    api_base_url = os.getenv("API_BASE_URL", "").strip()
-    model = os.getenv("MODEL_NAME", "").strip()
-    api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("HF_TOKEN", "").strip()
+    api_base_url = API_BASE_URL
+    model = MODEL_NAME
+    api_key = os.getenv("OPENAI_API_KEY", "").strip() or HF_TOKEN
 
     if mode != "mock":
         missing = [
@@ -191,11 +197,6 @@ def run_baseline() -> None:
         ]
         if missing:
             raise RuntimeError(f"Missing required env vars in api mode: {', '.join(missing)}")
-    else:
-        if not api_base_url:
-            api_base_url = "mock://local"
-        if not model:
-            model = "gpt-4o-mini"
 
     seed = int(os.getenv("OPENAI_SEED", "7"))
     output_path = os.getenv("BASELINE_OUTPUT", "baseline_scores.json")
