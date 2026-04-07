@@ -223,28 +223,39 @@ Output:
 
 ### Docker status in this environment
 
-Command:
+Build command:
 
 ```bash
-docker build -t support-ticket-env .
+docker build -t support-ticket-env-proof .
 ```
 
-Output:
+Build output:
 
 ```text
-ERROR: failed to connect to the docker API ... dockerDesktopLinuxEngine ...
+[+] Building ... FINISHED
+=> naming to docker.io/library/support-ticket-env-proof:latest
 ```
 
-This indicates Docker Desktop daemon is not running/accessible in the current
-session. Start Docker Desktop and rerun build/run before final submission.
+Run command:
+
+```bash
+docker run --rm -p 7860:7860 support-ticket-env-proof
+```
+
+Runtime health proof:
+
+```text
+GET  http://127.0.0.1:7860/health  -> 200 {"status":"healthy"}
+POST http://127.0.0.1:7860/reset   -> 200 {"observation":..., "state":...}
+```
 
 ### Hugging Face Space live health response
 
-Pending deployment artifact (to fill after you deploy):
+Live deployment proof:
 
 ```text
-URL: https://<your-space>.hf.space/health
-Expected: {"status": "healthy"}
+GET  https://sanjay7676-meta-x-scaler.hf.space/health -> 200 {"status":"healthy"}
+POST https://sanjay7676-meta-x-scaler.hf.space/reset  -> 200 {"observation":..., "state":...}
 ```
 
 ## Project structure

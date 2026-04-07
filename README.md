@@ -9,18 +9,19 @@ tags:
 
 # Support Ticket OpenEnv Environment
 
-This project is a real-world customer support simulation environment for agent
-training and evaluation. Agents must triage and respond to support tickets with
-correct category, priority, and next action.
+This project is a customer support simulation environment built for agent
+training and evaluation. The job is straightforward on paper: triage incoming
+support tickets and respond with the right category, priority, and next action.
 
 ## Why this environment
 
-Support triage is a practical business workflow (billing/account/technical) and
-is useful for benchmarking planning, classification, and response quality in
-agent systems.
+Support triage is one of those business workflows that looks simple until you
+actually try to automate it. It cuts across billing, account, and technical
+issues, which makes it a useful benchmark for planning, classification, and
+response quality in agent systems.
 
-The dataset includes diverse operational scenarios such as duplicate charges,
-SSO failures, webhook outages, VAT invoice requests, permission cleanup, and
+The dataset covers a mix of operational cases like duplicate charges, SSO
+failures, webhook outages, VAT invoice requests, permission cleanup, and
 subscription changes.
 
 ## OpenEnv compatibility
@@ -64,11 +65,12 @@ Defined in [env/tasks.py](env/tasks.py):
 - `medium`: category + priority classification
 - `hard`: full resolution (category + priority + action + response quality)
 
-Hard mode is intentionally multi-step: agents should diagnose first, then
-resolve after enough confidence. Premature resolution is penalized.
+Hard mode is intentionally multi-step. The agent is supposed to diagnose first
+and only resolve once it has enough confidence. Resolving too early is
+penalized.
 
-Each task has deterministic grading in [env/graders.py](env/graders.py) with
-scores in `[0.0, 1.0]`.
+Each task is graded deterministically in [env/graders.py](env/graders.py), with
+scores bounded to `[0.0, 1.0]`.
 
 ## Reward design
 
@@ -85,14 +87,17 @@ Main trajectory reward (see [env/env.py](env/env.py)):
 - `-0.02` per extra step time-cost shaping after step 1
 - `-0.1` compound-ticket under-triage penalty in hard mode (non-escalation)
 
-This provides dense partial-progress signal, not only terminal binary reward.
+The idea here is to give a dense partial-progress signal instead of only a
+terminal pass/fail reward. That made debugging agent behavior a lot less opaque
+in practice.
 
 ## Novel mechanics
 
-This environment models compound real-world tickets (multiple simultaneous issues)
-and adds a hard-mode under-triage penalty when the agent fails to escalate those
-cases. This creates a realistic tension between quick closure and safe triage,
-which better reflects enterprise support operations.
+This environment models compound real-world tickets, where multiple issues can
+show up in the same case, and adds a hard-mode under-triage penalty when the
+agent fails to escalate them. That creates a more realistic tension between
+closing things quickly and triaging them safely, which is much closer to how
+enterprise support actually works.
 
 ## Setup
 
@@ -108,8 +113,8 @@ pip install -r requirements.txt
 
 ## Baseline inference (OpenAI API)
 
-[inference.py](inference.py) runs a baseline model on all 3 tasks and prints
-per-task scores plus average score.
+[inference.py](inference.py) runs a baseline model across all 3 tasks and
+prints per-task scores along with the average score.
 
 Set environment variables:
 
@@ -132,7 +137,7 @@ Output includes:
 - Summary average grader score
 
 The script also writes a machine-readable artifact (`baseline_scores.json`) for
-submission evidence.
+submission evidence, so you do not have to scrape logs later.
 
 ## Baseline scores
 
@@ -146,8 +151,8 @@ Latest local run (deterministic mock mode) from `baseline_scores.json`:
 | **Average** | **1.0000** | - | - |
 
 Note: these values were generated with `BASELINE_MODE=mock` because
-`OPENAI_API_KEY` was unavailable in this environment. For official submission,
-rerun with API mode and replace the table with real model scores.
+`OPENAI_API_KEY` was not available in this environment. For official
+submission, rerun in API mode and replace the table with real model scores.
 
 ## Docker
 
@@ -186,7 +191,7 @@ Container entrypoint is configured in [Dockerfile](Dockerfile) with:
 
 ## Quality evidence for judging rubric
 
-This repo includes explicit checks that map directly to hackathon scoring:
+This repo includes explicit checks that line up directly with hackathon scoring:
 
 - `python validate_submission.py`:
   - verifies OpenEnv interface + endpoints
@@ -199,8 +204,9 @@ This repo includes explicit checks that map directly to hackathon scoring:
   - trajectory shaping variability check
   - compound-ticket under-triage penalty check
 
-These checks strengthen reliability, reproducibility, and fairness claims for
-"Task & grader quality", "Environment design", and "Code quality & spec compliance".
+These checks back up the reliability, reproducibility, and fairness claims for
+"Task & grader quality", "Environment design", and "Code quality & spec
+compliance".
 
 ## Submission evidence (captured)
 
@@ -253,28 +259,39 @@ Output:
 
 ### Docker status in this environment
 
-Command:
+Build command:
 
 ```bash
-docker build -t support-ticket-env .
+docker build -t support-ticket-env-proof .
 ```
 
-Output:
+Build output:
 
 ```text
-ERROR: failed to connect to the docker API ... dockerDesktopLinuxEngine ...
+[+] Building ... FINISHED
+=> naming to docker.io/library/support-ticket-env-proof:latest
 ```
 
-This indicates Docker Desktop daemon is not running/accessible in the current
-session. Start Docker Desktop and rerun build/run before final submission.
+Run command:
+
+```bash
+docker run --rm -p 7860:7860 support-ticket-env-proof
+```
+
+Runtime health proof:
+
+```text
+GET  http://127.0.0.1:7860/health  -> 200 {"status":"healthy"}
+POST http://127.0.0.1:7860/reset   -> 200 {"observation":..., "state":...}
+```
 
 ### Hugging Face Space live health response
 
-Pending deployment artifact (to fill after you deploy):
+Live deployment proof:
 
 ```text
-URL: https://<your-space>.hf.space/health
-Expected: {"status": "healthy"}
+GET  https://sanjay7676-meta-x-scaler.hf.space/health -> 200 {"status":"healthy"}
+POST https://sanjay7676-meta-x-scaler.hf.space/reset  -> 200 {"observation":..., "state":...}
 ```
 
 ## Project structure
