@@ -98,6 +98,37 @@ def check_tasks_and_graders() -> None:
     _ok("Tasks >= 3 and grader outputs are bounded to [0.0, 1.0]")
 
 
+def check_determinism_and_signal() -> None:
+    """Verify deterministic grading and non-trivial trajectory reward shaping."""
+    env = SupportEnv()
+    expected = TICKETS[TASKS["hard"].ticket_index]
+
+    sample_action = Action(
+        category=expected["category"],
+        priority=expected["priority"],
+        action=expected["action"],
+        response="We escalated this issue and will provide updates.",
+        resolve=False,
+    )
+
+    # Grader determinism: same input should always yield same output.
+    scores = [grade("hard", sample_action, expected) for _ in range(5)]
+    if len(set(scores)) != 1:
+        _fail(f"Grader is non-deterministic for repeated identical inputs: {scores}")
+
+    # Reward signal should vary across trajectory to avoid sparse/binary behavior.
+    env.reset(task_id="hard")
+    _, reward_1, _, _ = env.step(sample_action)
+    _, reward_2, _, _ = env.step(sample_action)
+    if reward_1.score == reward_2.score:
+        _fail(
+            "Trajectory reward signal appears static across steps in hard mode; "
+            "expected meaningful shaping (progress/time/loop effects)."
+        )
+
+    _ok("Graders are deterministic and trajectory rewards provide varying signal")
+
+
 def check_inference_mock() -> None:
     env = os.environ.copy()
     env["BASELINE_MODE"] = "mock"
@@ -122,6 +153,13 @@ def check_docker() -> None:
     if shutil.which("docker") is None:
         print("[SKIP] Docker CLI not found locally. Remote validation will still run Docker build.")
         return
+
+    # If Docker daemon is unavailable locally, skip instead of failing hard.
+    daemon = subprocess.run(["docker", "info"], capture_output=True, text=True)
+    if daemon.returncode != 0:
+        print("[SKIP] Docker daemon is not running/accessible locally. Remote validation will still run Docker build.")
+        return
+
     cmd = ["docker", "build", "-t", "support-ticket-env-local-check", "."]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -134,6 +172,7 @@ def main() -> None:
     check_openenv_spec()
     check_api_endpoints()
     check_tasks_and_graders()
+    check_determinism_and_signal()
     check_inference_mock()
     check_docker()
     print("[PASS] Pre-submission checks completed")

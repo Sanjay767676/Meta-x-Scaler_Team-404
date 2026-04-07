@@ -25,6 +25,10 @@ _W_KEYWORDS  = 0.2   # response contains useful keywords
 
 _PENALTY_ALL_WRONG = 0.2  # deducted when category, priority, AND action are all wrong
 _PENALTY_PREMATURE_RESOLVE = 0.25
+_PENALTY_STEP_COST = 0.02
+_BONUS_PROGRESS = 0.05
+_PENALTY_STAGNATION = 0.05
+_PENALTY_COMPOUND_UNDERTRIAGE = 0.1
 
 # Imported from graders.py — single source of truth for keyword scoring.
 _ACTION_KEYWORDS = ACTION_KEYWORDS
@@ -53,6 +57,8 @@ class SupportEnv:
         self._ticket_index: int = 0
         self._task_id: str = "hard"
         self._hard_phase: str = "diagnose"
+        self._best_score: float = 0.0
+        self._last_signature: Optional[tuple[str, str, str]] = None
 
     # ------------------------------------------------------------------
     # Public interface
@@ -88,6 +94,8 @@ class SupportEnv:
         self._conversation_history = []
         self._done = False
         self._hard_phase = "diagnose"
+        self._best_score = 0.0
+        self._last_signature = None
         return self._build_observation()
 
     def step(self, action: Action) -> tuple[Observation, Reward, bool, dict]:
@@ -247,5 +255,31 @@ class SupportEnv:
             if self._conversation_history[-1] == self._conversation_history[-2]:
                 score = max(0.0, score - 0.1)
                 reasons.append("looping response pattern: penalty (-0.1)")
+
+        # Dense trajectory shaping: encourage steady improvement and discourage stagnation.
+        if score > self._best_score:
+            score = min(1.0, score + _BONUS_PROGRESS)
+            reasons.append(f"progress over previous best (+{_BONUS_PROGRESS})")
+            self._best_score = score
+
+        signature = (action.category.lower(), action.priority.lower(), action.action.lower())
+        if self._last_signature == signature and score < 1.0:
+            score = max(0.0, score - _PENALTY_STAGNATION)
+            reasons.append(f"stagnant decision triple: penalty (-{_PENALTY_STAGNATION})")
+        self._last_signature = signature
+
+        if self._step_count > 1:
+            step_cost = _PENALTY_STEP_COST * (self._step_count - 1)
+            score = max(0.0, score - step_cost)
+            reasons.append(f"time cost at step {self._step_count} (-{round(step_cost, 4)})")
+
+        # Novel hard-mode mechanic: multi-intent tickets should be escalated.
+        query = t["query"].lower()
+        is_compound = any(token in query for token in (" and ", "meanwhile", "also"))
+        if self._task_id == "hard" and is_compound and action.action.lower() != "escalate":
+            score = max(0.0, score - _PENALTY_COMPOUND_UNDERTRIAGE)
+            reasons.append(
+                f"compound ticket under-triaged (expected escalate): penalty (-{_PENALTY_COMPOUND_UNDERTRIAGE})"
+            )
 
         return Reward(score=round(score, 4), reason="; ".join(reasons))
