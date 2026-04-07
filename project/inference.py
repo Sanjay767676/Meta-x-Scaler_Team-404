@@ -1,24 +1,36 @@
-"""OpenAI baseline runner with structured submission logs.
+﻿"""OpenAI baseline runner with strict structured submission logs.
 
-Required env vars (api mode): API_BASE_URL, MODEL_NAME, OPENAI_API_KEY
+Required env vars (api mode): API_BASE_URL, MODEL_NAME, and HF_TOKEN (or OPENAI_API_KEY).
 """
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import time
-from typing import Any, Optional
+from typing import Optional
 
 from openai import OpenAI
 
 from env import Action, SupportEnv, TASKS, TICKETS, grade
 
+BENCHMARK = os.getenv("BENCHMARK", "support-ticket-env")
 
-def _emit(tag: str, **fields: Any) -> None:
-    """Emit machine-parseable logs in required [TAG] format."""
-    payload = " ".join(f"{k}={json.dumps(v, ensure_ascii=True)}" for k, v in fields.items())
-    print(f"[{tag}] {payload}")
+
+def _emit_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}")
+
+
+def _emit_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    done_value = str(done).lower()
+    err_value = error if error else "null"
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_value} error={err_value}")
+
+
+def _emit_end(success: bool, steps: int, score: float, rewards: list[float]) -> None:
+    success_value = str(success).lower()
+    rewards_value = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={success_value} steps={steps} score={score:.2f} rewards={rewards_value}")
 
 
 def parse_model_output(raw: str) -> Action:
@@ -59,8 +71,7 @@ def build_prompt(task_id: str, user_query: str, history: list[str]) -> str:
 
 def call_model(client: OpenAI, prompt: str, model: str) -> str:
     """Call OpenAI Chat Completions with deterministic settings."""
-    seed_raw = os.getenv("OPENAI_SEED", "7")
-    seed = int(seed_raw)
+    seed = int(os.getenv("OPENAI_SEED", "7"))
     completion = client.chat.completions.create(
         model=model,
         temperature=0,
@@ -93,59 +104,76 @@ def mock_model_output(expected: dict, step: int) -> str:
     )
 
 
-def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> dict[str, Any]:
-    """Run one task and return reproducible grader and environment scores."""
+def run_task(task_id: str, client: Optional[OpenAI], model: str, mode: str) -> dict:
+    """Run one task episode and emit strict START/STEP/END logs."""
     task = TASKS[task_id]
     expected = TICKETS[task.ticket_index]
 
     env = SupportEnv()
     obs = env.reset(task_id=task_id)
     done = False
+    rewards: list[float] = []
     episode_return = 0.0
-    info: dict[str, Any] = {"step": 0}
-    action = Action(
-        category="unknown",
-        priority="medium",
-        action="guide",
-        response="",
-        resolve=False,
-    )
+    info: dict = {"step": 0}
+    last_error: Optional[str] = None
+    action = Action(category="unknown", priority="medium", action="guide", response="", resolve=False)
 
-    while not done:
-        prompt = build_prompt(task_id=task_id, user_query=obs.user_query, history=obs.conversation_history)
-        if mode == "mock":
-            raw_output = mock_model_output(expected=expected, step=info["step"] + 1)
-        else:
-            if client is None:
-                raise RuntimeError("OpenAI client is required in api mode.")
-            raw_output = call_model(client=client, prompt=prompt, model=model)
-        action = parse_model_output(raw_output)
-        obs, env_reward, done, info = env.step(action)
-        episode_return += env_reward.score
-        _emit(
-            "STEP",
-            task=task_id,
-            step=info["step"],
-            ticket_id=info["ticket_id"],
-            done=done,
-            env_reward=env_reward.score,
-        )
+    _emit_start(task=task_id, env=BENCHMARK, model=model)
+
+    try:
+        while not done:
+            prompt = build_prompt(task_id=task_id, user_query=obs.user_query, history=obs.conversation_history)
+            if mode == "mock":
+                raw_output = mock_model_output(expected=expected, step=info["step"] + 1)
+            else:
+                if client is None:
+                    raise RuntimeError("OpenAI client is required in api mode.")
+                raw_output = call_model(client=client, prompt=prompt, model=model)
+
+            action = parse_model_output(raw_output)
+            obs, env_reward, done, info = env.step(action)
+
+            reward_value = float(env_reward.score)
+            rewards.append(reward_value)
+            episode_return += reward_value
+
+            action_value = (
+                f"{action.action}(category={action.category},priority={action.priority},"
+                f"resolve={str(action.resolve).lower()})"
+            )
+            _emit_step(
+                step=int(info["step"]),
+                action=action_value,
+                reward=reward_value,
+                done=bool(done),
+                error=None,
+            )
+    except Exception as exc:
+        last_error = str(exc)
+    finally:
+        close_fn = getattr(env, "close", None)
+        if callable(close_fn):
+            close_fn()
 
     grader_score = grade(task_id, action, expected)
+    normalized_score = max(0.0, min(1.0, float(grader_score)))
+    success = done and last_error is None
+    _emit_end(success=success, steps=int(info.get("step", 0)), score=normalized_score, rewards=rewards)
 
     return {
         "task": task_id,
         "ticket_id": obs.ticket_id,
         "done": done,
-        "step": info["step"],
-        "grader_score": grader_score,
+        "step": int(info.get("step", 0)),
+        "grader_score": normalized_score,
         "episode_return": round(episode_return, 4),
-        "action": action,
+        "rewards": [round(r, 4) for r in rewards],
+        "error": last_error,
     }
 
 
 def run_baseline() -> None:
-    """Run all tasks (easy, medium, hard) and print baseline summary."""
+    """Run all tasks and write baseline artifact without extra stdout lines."""
     mode = os.getenv("BASELINE_MODE", "api").lower().strip()
     api_base_url = os.getenv("API_BASE_URL", "").strip()
     model = os.getenv("MODEL_NAME", "").strip()
@@ -157,7 +185,7 @@ def run_baseline() -> None:
             for name, value in (
                 ("API_BASE_URL", api_base_url),
                 ("MODEL_NAME", model),
-                ("OPENAI_API_KEY", api_key),
+                ("HF_TOKEN or OPENAI_API_KEY", api_key),
             )
             if not value
         ]
@@ -177,37 +205,14 @@ def run_baseline() -> None:
     client = OpenAI(api_key=api_key, base_url=api_base_url) if mode != "mock" else None
 
     task_order = ["easy", "medium", "hard"]
-    _emit(
-        "START",
-        mode=mode,
-        model=model,
-        api_base_url=api_base_url,
-        max_runtime_seconds=max_runtime_seconds,
-        tasks=task_order,
-        seed=seed,
-    )
-
     results = [run_task(task_id=t, client=client, model=model, mode=mode) for t in task_order]
 
-    print(f"[BASELINE] mode={mode} | model={model} | seed={seed}")
-    total = 0.0
-    for r in results:
-        total += r["grader_score"]
-        a = r["action"]
-        print(
-            f"[TASK {r['task'].upper()}] ticket_id={r['ticket_id']} | "
-            f"grader_score={r['grader_score']:.4f} | episode_return={r['episode_return']:.4f} | steps={r['step']}"
-        )
-        print(
-            f"             category={a.category} | priority={a.priority} | "
-            f"action={a.action} | resolve={a.resolve}"
-        )
-
-    avg = total / len(results)
-    print(f"[SUMMARY] average_grader_score={avg:.4f}")
+    avg = sum(r["grader_score"] for r in results) / len(results)
 
     payload = {
         "model": model,
+        "benchmark": BENCHMARK,
+        "mode": mode,
         "seed": seed,
         "scores": [
             {
@@ -216,6 +221,8 @@ def run_baseline() -> None:
                 "grader_score": r["grader_score"],
                 "episode_return": r["episode_return"],
                 "steps": r["step"],
+                "rewards": r["rewards"],
+                "error": r["error"],
             }
             for r in results
         ],
@@ -223,20 +230,12 @@ def run_baseline() -> None:
     }
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    print(f"[ARTIFACT] wrote {output_path}")
 
     elapsed = round(time.monotonic() - start, 3)
     if elapsed > max_runtime_seconds:
         raise TimeoutError(
             f"Inference runtime exceeded MAX_RUNTIME_SECONDS ({elapsed}s > {max_runtime_seconds}s)."
         )
-    _emit(
-        "END",
-        average_grader_score=round(avg, 4),
-        runtime_seconds=elapsed,
-        output_path=output_path,
-        tasks=len(results),
-    )
 
 
 if __name__ == "__main__":
